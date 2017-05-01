@@ -1,0 +1,475 @@
+---
+title: "CSCI E-63C Week 8 assignment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(cluster)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preface
+
+In this assignment we will exercise some of the measures for evaluating "goodness of clustering" presented in the lecture this week on the clusters obtained for the World Health Statistics (WHS) dataset from week 6.  Please feel free to adapt/reuse code presented in lecture slides as necessary or implementations already available in R.  All problems in this assignment are expected to be performed on *scaled* WHS data -- if somewhere it does not mention it explicitly, please assume that it is scaled data that should be used. 
+
+Lastly, as a dose of reality check: WHS is a dataset capturing variability of population health measures across more or less the entire diversity of societies in the world -- please be prepared to face the fact that resulting clustering structures are far from textbook perfect, may not be very clearly defined, etc.
+
+
+```{r WHS}
+setwd("/users/yuanshanhu/downloads")
+whsAnnBdatNum <- read.table("whs2016_AnnexB-data-wo-NAs.txt",sep="\t",header=TRUE,quote="")
+```
+
+# Problem 1: within/between cluster variation and CH-index (10 points)
+
+Present plots of (total) within and between cluster variance provided by K-means clustering on scaled WHS data.  Choose value of `nstart` for better stability of the results across multiple trials and evaluate stability of those results across several runs.  Discuss the results and whether the shape of the curves suggest specific number of clusters in the data.
+
+To evaluate stability of the results across several runs I chose a large nstart value of 50 as recommended in ISLR (pg 405). The shape of both SSWithin and SSBetween curves shows an "elbow" at K = 3 suggesting that K=3 is the optimal clustering.  The largest CH Index is at K=2, at 87.3  
+
+```{r within and between cluster variation and CH-Index}
+
+w = numeric(20)
+for (k in 1:20) {
+  kf = kmeans(scale(whsAnnBdatNum), k, nstart = 50)
+  w[k] = kf$tot.withinss
+}
+print(w)
+plot(1:20, w, type = "b", lwd=2, pch=19, xlab="K", 
+     ylab = expression ("SS[within]"))
+
+w = numeric(20)
+for (k in 1:20) {
+  kf = kmeans(scale(whsAnnBdatNum), k, nstart = 50)
+  w[k] = kf$betweenss
+}
+plot(1:20, w, type = "b", lwd=2, pch=19, xlab="K", 
+     ylab = expression ("SS[between]"))
+
+
+w=numeric(20)
+for ( k in 2:20 ) {
+kf=kmeans(scale(whsAnnBdatNum),k, nstart = 50)
+w[k] = (kf$betweenss/(k-1))/
+(kf$tot.withinss/(nrow(whsAnnBdatNum)-k))
+}
+plot(2:20,w[-1],type="b", lwd=2,pch=19,xlab="K",
+ylab="CH index")
+
+print(w) #gives the CH Index 
+```
+
+To evaluate stability of the results across several runs I chose a large nstart value of 50 as recommended in ISLR (pg 405).  I initially plotted the graphs utilizing unscaled data but the "elbow" locations and CH Max did not appear to match.  Upon consideration I changed to using scaled data  The shape of both SSWithin and SSBetween curves shows an "elbow" at K = 4 suggesting that k=4 is the optimal clustering.  The CH Index graph however has the maximum at K = 4.
+
+```{r extra credit for Quakes dataset: wisthin and between cluster variation}
+
+clr <- gray((quakes$depth-min(quakes$depth))/range(quakes$depth)%*%c(-1,1))
+plot(quakes$lat,quakes$long,col=clr)
+
+ggplot(quakes,aes(x=lat,y=long,colour=depth))+geom_point()
+
+summary(quakes)
+
+w = numeric(20)
+for (k in 1:20) {
+  kf = kmeans(scale(quakes), k, nstart = 50)
+  w[k] = kf$tot.withinss
+}
+plot(1:20, w, type = "b", lwd=2, pch=19, xlab="K", 
+     ylab = expression ("SS[within]"))
+
+w = numeric(20)
+for (k in 1:20) {
+  kf = kmeans(scale(quakes), k, nstart = 50)
+  w[k] = kf$betweenss
+}
+plot(1:20, w, type = "b", lwd=2, pch=19, xlab="K", 
+     ylab = expression ("SS[between]"))
+
+
+w=numeric(20)
+for ( k in 2:20 ) {
+kf=kmeans(scale(quakes),k, nstart = 50)
+w[k] = (kf$betweenss/(k-1))/
+(kf$tot.withinss/(nrow(quakes)-k))
+}
+plot(2:20,w[-1],type="b", lwd=2,pch=19,xlab="K",
+ylab="CH index")
+
+print(w)
+```
+
+# Problem 2: gap statistics (10 points)
+
+Using code provided in the lecture slides for calculating gap statistics or one of its implementations available in R (e.g. `clusGap` from library `cluster`) compute and plot gap statistics for K-means clustering of scaled WHS data for 2 through 20 clusters.  Discuss whether it indicates presence of clearly defined cluster structure in this data.
+
+Gap statistics compares the within cluster sum of squares of our desired data set to that of a null set.  The idea is that without cluster structure we expect the null clusters to be "bad" and "wide" and therefore have large within cluster sum of squares.  The tighter the clusters (smaller the within cluster sum of squares) of our data set the larger the gap score. The K value at which the gap score reaches its first maximum denotes the optimal number of clusters
+
+In the WHS data set the gap score reaches its first maximum at K = 6, suggesting this is the optimal number of clusters.  However even at the first maximum the gap score is below 5, which is low, suggesting the WHS data does not have very well-defined clusters as analyzed by K-means clustering.  
+
+```{r Gap statistics}
+
+lw.unif=function(m.new,K,N=20) {
+m.new=apply(whsAnnBdatNum,2,function(x) {
+runif(length(x),min=min(x),max=max(x))
+})
+w=numeric(N)
+for ( i in 1:N ) {
+kf=kmeans(m.new,K)
+w[i] = kf$tot.withinss
+}
+return( list(LW=mean(log(w)),SE=sd(log(w))/sqrt(N)) )
+}
+
+gap=numeric(20)
+se = numeric(20)
+for ( k in 1:20 ) {
+kf=kmeans(whsAnnBdatNum,k)
+sim = lw.unif(m.new,k)
+gap[k] = sim$LW - log(kf$tot.withinss)
+se[k] = sim$SE
+}
+plot(1:20,gap,pch=19,type="b")
+# find optimal K:
+min(which(gap[-length(gap)]>=
+(gap-se)[-1] ) )
+
+
+```
+
+In the Quakes data set the gap score reaches its first maximum at K = 2, suggesting this is the optimal number of clusters.  At the first maximum the gap score is higher than 26.   suggesting the Quakes data set has more well-defined clustering than the WHS data set.   
+```{r Gap Statistic extra credit for Quakes}
+
+lw.unif.quakes=function(m.new.quakes,K,N=20) {
+m.new.quakes=apply(quakes,2,function(x) {
+runif(length(x),min=min(x),max=max(x))
+})
+w=numeric(N)
+for ( i in 1:N ) {
+kf.quakes=kmeans(m.new.quakes,K)
+w[i] = kf.quakes$tot.withinss
+}
+return( list(LW=mean(log(w)),SE=sd(log(w))/sqrt(N)) )
+}
+# computes the gap and the LogWunif SE
+# for different K:
+gap=numeric(20)
+se = numeric(20)
+for ( k in 1:20 ) {
+kf=kmeans(quakes,k)
+sim = lw.unif(quakes,k)
+gap[k] = sim$LW - log(kf$tot.withinss)
+se[k] = sim$SE
+}
+plot(1:20,gap,pch=19,type="b")
+# find optimal K:
+min(which(gap[-length(gap)]>=
+(gap-se)[-1] ) )
+```
+
+# Problem 3: assessment of cluster strength by silhouette (10 points)
+
+Perform hierachical clustering of scaled WHS dataset using euclidean distance and Ward clustering method.  Evaluate strength of top 2, 3, 4, ... clusters using `silhouette` function implemented in library `cluster`.  Discuss strengths of support for those clusters memberships.
+
+Silhouette measure the distance between x and its own cluster, as compared to the distance to the closest cluster.  
+For the scaled WHS data below, the silhouette width is highest at K = 2, at average width of 0.33, suggesting that for hierarchical clustering using the ward method, the optimal custering is at 2. This is because the average cluster is much stronger at  K = 2 comapred to k values from 3 to 8.  
+```{r Silhouette for WHS data}
+
+scaledWhsAnnBdatNum <- scale(whsAnnBdatNum)
+hc.WHS <- hclust(dist(scaledWhsAnnBdatNum), method="ward.D2")
+plot(hc.WHS, main="Ward Linkage", xlab="", ylab="", cex=0.4)
+d=dist(scaledWhsAnnBdatNum)
+
+
+summary(silhouette(cutree(hc.WHS, k=2), dist(scaledWhsAnnBdatNum)))
+plot(silhouette(cutree(hc.WHS, k=2), dist(scaledWhsAnnBdatNum)))
+
+
+summary(silhouette(cutree(hc.WHS, k=3), dist(scaledWhsAnnBdatNum)))
+plot(silhouette(cutree(hc.WHS, k=3), dist(scaledWhsAnnBdatNum)))
+
+
+summary(silhouette(cutree(hc.WHS, k=4), dist(scaledWhsAnnBdatNum)))
+plot(silhouette(cutree(hc.WHS, k=4), dist(scaledWhsAnnBdatNum)))
+
+
+summary(silhouette(cutree(hc.WHS, k=5), dist(scaledWhsAnnBdatNum)))
+plot(silhouette(cutree(hc.WHS, k=5), dist(scaledWhsAnnBdatNum)))
+
+
+summary(silhouette(cutree(hc.WHS, k=6), dist(scaledWhsAnnBdatNum)))
+plot(silhouette(cutree(hc.WHS, k=6), dist(scaledWhsAnnBdatNum)))
+
+
+summary(silhouette(cutree(hc.WHS, k=7), dist(scaledWhsAnnBdatNum)))
+plot(silhouette(cutree(hc.WHS, k=7), dist(scaledWhsAnnBdatNum)))
+
+
+summary(silhouette(cutree(hc.WHS, k=8), dist(scaledWhsAnnBdatNum)))
+plot(silhouette(cutree(hc.WHS, k=8), dist(scaledWhsAnnBdatNum)))
+hc.WHS$clus.avg.silwidths
+
+```
+
+
+For the scaled Quakes data below, the silhouette width is highest at K = 3, at average width of 0.36, suggesting that for hierarchical clustering using the ward method, the optimal custering is at 3. This is because the average cluster is much stronger at  K = 3 comapred to k values from 2 or 4 as indicated by the average silhouette width.
+```{r quakes dataset hierarchical clustering silhouette plot}
+scaledQuakes <- scale(quakes)
+hc.quakes <- hclust(dist(scaledQuakes), method="ward.D2")
+plot(hc.quakes, main="Ward Linkage", xlab="", ylab="", cex=0.4)
+d=dist(scaledQuakes)
+
+
+summary(silhouette(cutree(hc.quakes, k=2), dist(scaledQuakes)))
+plot(silhouette(cutree(hc.quakes, k=2), dist(scaledQuakes)))
+
+
+summary(silhouette(cutree(hc.quakes, k=3), dist(scaledQuakes)))
+plot(silhouette(cutree(hc.quakes, k=3), dist(scaledQuakes)), col="black")
+
+summary(silhouette(cutree(hc.quakes, k=4), dist(scaledQuakes)))
+plot(silhouette(cutree(hc.quakes, k=4), dist(scaledQuakes)))
+
+```
+
+
+# Problem 4: stability of hierarchical clustering (10 points)
+
+For top 2, 3 and 4 clusters (as obtained by `cutree` at corresponding levels of `k`) found by Ward method in `hclust` and by K-means when applied to the scaled WHS data compare cluster memberships between these two methods and describe their concordance.  This problem is similar to the one in 6th week assignment, but this time it is *required* to: 1) use two dimensional contingency tables implemented by `table` to compare membership between two assignments of observations to clusters, and 2) programmatically re-order rows and columns in the `table` outcome in the increasing order of observations shared between two clusters (please see examples in lecture slides).
+
+For the WHS data set the hc.clusters and k-means both classified countries predominantly in one cluster when K = 2, in K = 3 and K = 4 we see that only 2 of the clusters had membership, the remaining cluster had no membership. Increasing the number of k only led to additional empty clusters.  K means clustering appears to have better defined clusters compared to hierarchical clustering.   
+```{r stability of hierarchical clustering for WHS dataset}
+
+library(ISLR)
+
+ data.1 = whsAnnBdatNum[,apply(whsAnnBdatNum,2,sd)>1]
+ data.1.s = scale(data.1)
+# try k-means first:
+ w=numeric(20)
+ for ( k in 2:20 ) {
+kf=kmeans(data.1,k)
+w[k] = (kf$betweenss/
+(k-1))/(kf$tot.withinss/(length(whsAnnBdatNum)-k))
+}
+plot(2:20,w[-1],type="b",lwd=2,pch=19,xlab="K",
+ylab="CH index")
+
+matrix.sort <- function(m) {
+if (nrow(m) != ncol(m)) { stop("Not diagonal") }
+if(is.null(rownames(m))) { rownames(m) = 1:nrow(matrix)}
+row.max = apply(m,1,which.max)
+if(any(table(row.max) != 1)) {
+col.max = apply(m,2,which.max)
+if ( any(table(col.max)!=1) ) {
+warning("Ties cannot be resolved")
+}
+return(m[,order(col.max)])
+}
+m[order(row.max),]
+}
+
+cmp.shortcut = function(K) {
+matrix.sort(table(K.MEANS=kmeans(data.1.s,K,10)$cluster,
+                  HC.CLUST=cutree(hclust(dist(data.1.s), 
+                  method = "ward.D2"), K, 10)))
+}
+
+
+cmp.shortcut(2)
+cmp.shortcut(3)
+cmp.shortcut(4)
+
+```
+
+
+
+```{r stability of hierarchical clustering for Quakes}
+
+ data.q = quakes[,apply(quakes,2,sd)>1]
+ data.q.s = scale(data.q)
+# try k-means first:
+ w=numeric(20)
+ for ( k in 2:20 ) {
+kf=kmeans(data.q,k)
+w[k] = (kf$betweenss/
+(k-1))/(kf$tot.withinss/(length(quakes)-k))
+}
+plot(2:20,w[-1],type="b",lwd=2,pch=19,xlab="K",
+ylab="CH index")
+
+matrix.sort <- function(m) {
+if (nrow(m) != ncol(m)) { stop("Not diagonal") }
+if(is.null(rownames(m))) { rownames(m) = 1:nrow(matrix)}
+row.max = apply(m,1,which.max)
+if(any(table(row.max) != 1)) {
+col.max = apply(m,2,which.max)
+if ( any(table(col.max)!=1) ) {
+warning("Ties cannot be resolved")
+}
+return(m[,order(col.max)])
+}
+m[order(row.max),]
+}
+
+cmp.shortcut = function(K) {
+matrix.sort(table(K.MEANS=kmeans(data.q.s,K,10)$cluster,
+                  HC.CLUST=cutree(hclust(dist(data.q.s), 
+                  method = "ward.D2"), K, 10)))
+}
+
+
+cmp.shortcut(2)
+cmp.shortcut(3)
+cmp.shortcut(4)
+```
+
+## For *extra 10 points*
+
+Repeat the same exercise except that instead of WHS data use as input a matrix of the same size filled with standard normal deviates (as provided by `rnorm`).  Compare and discuss concordance of clustering by those two methods and contrast that with what was obtained on scaled WHS data.
+
+
+# Problem 5: between/within variance in hierarchical clusters (10 points)
+
+Using functions `between` and `within` provided in the lecture slides calculate between and (total) within cluster variances for top 2 through 20 clusters defined by Ward's hierarchical clustering when applied to scaled WHS data.  Compare their behavior to that of the same statistics when obtained for K-means clustering above.
+
+
+Here we see the "elbow" is harder to identify in graphs below compared to k-means clustering.  This is as expected as the contingency table comparison in the previous problem shows that k-means analysis yielded better clustering (more distinct clusters) compared to hierarchical clustering using the ward method. 
+```{r between and within variance in hierarchical cluster for WHS data}
+d = dist(data.1.s)
+within=function(d,clust) {
+w=numeric(length(unique(clust)))
+for ( i in sort(unique(clust)) ) {
+members = d[clust==i,,drop=F]
+centroid = apply(members,2,mean)
+members.diff = sweep(members,2,centroid)
+w[i] = sum(members.diff^2)
+}
+return(w)
+}
+
+between=function(d,clust) {
+b=0
+total.mean = apply(d,2,mean)
+for ( i in sort(unique(clust)) ) {
+members = d[clust==i,,drop=F]
+centroid = apply(members,2,mean)
+b = b + nrow(members)*
+sum( (centroid-total.mean)^2 )
+}
+return(b)
+}
+
+dd.1=dist(data.1.s)
+hw.1=hclust(dd.1,method="ward.D2")
+w.tot=numeric(19)
+btw=numeric(19)
+for ( k in 2:20 ) {
+clust = cutree(hw.1,k=k)
+w = within(data.1.s,clust)
+w.tot[k-1]=sum(w)
+btw[k-1] = between(data.1.s,clust)
+}
+
+print(btw) #prints between cluster variance for hierarchical clustering
+print(w.tot) #prints within cluster variance for hierarchical clustering
+print(w)
+
+plot(2:20,w.tot,pch=19,type="b")
+plot(2:20,btw,pch=19,type="b")
+plot(2:20,(btw/(1:19))/(w.tot/(nrow(data.1.s)-2:20)),pch=19,type="b")
+
+```
+
+
+```{r within and bewteen cluster variance for Quakes data set}
+
+d = dist(data.q.s)
+within=function(d,clust) {
+w=numeric(length(unique(clust)))
+for ( i in sort(unique(clust)) ) {
+members = d[clust==i,,drop=F]
+centroid = apply(members,2,mean)
+members.diff = sweep(members,2,centroid)
+w[i] = sum(members.diff^2)
+}
+return(w)
+}
+
+between=function(d,clust) {
+b=0
+total.mean = apply(d,2,mean)
+for ( i in sort(unique(clust)) ) {
+members = d[clust==i,,drop=F]
+centroid = apply(members,2,mean)
+b = b + nrow(members)*
+sum( (centroid-total.mean)^2 )
+}
+return(b)
+}
+
+dd.q=dist(data.q.s)
+hw.q=hclust(dd.q,method="ward.D2")
+w.tot=numeric(19)
+btw=numeric(19)
+for ( k in 2:20 ) {
+clust = cutree(hw.q,k=k)
+w = within(data.q.s,clust)
+w.tot[k-1]=sum(w)
+btw[k-1] = between(data.q.s,clust)
+}
+
+print(btw) #prints between cluster variance for hierarchical clustering
+print(w.tot) #prints within cluster variance for hierarchical clustering
+print(w)
+
+plot(2:20,w.tot,pch=19,type="b")
+plot(2:20,btw,pch=19,type="b")
+plot(2:20,(btw/(1:19))/(w.tot/(nrow(data.q.s)-2:20)),pch=19,type="b")
+```
+
+# Problem 6: Brute force randomization in hierarchical clustering (10 points)
+
+Compare distribution of the heights of the clusters defined by `hclust` with Ward's clustering of Euclidean distance between countries in scaled WHS dataset and those obtained by applying the same approach to the distances calculated on randomly permuted WHS dataset as illustrated in the lecture slides.  Discuss whether results of such brute force randomization are supportive of presence of unusually close or distant sets of observations within WHS data.
+
+
+Here brute force clustering shows there's some overlap between the red (data set) and the blue (randomized) column.  The overlap below height 0.1 could contribute to the strength of clustering (or lack of) in the WHS data set.
+```{r Brute force randomization for WHS data}
+
+ori.heights = hw.1$height
+rnd.heights = numeric()
+for ( i.sim in 1:100 ) {
+data.rnd <-apply(data.1,2,runif)
+hw.rnd=hclust(dist(data.rnd),method="ward.D2")
+rnd.heights <- c(rnd.heights,hw.rnd$height)
+}
+print(ori.heights)
+length(ori.heights)
+print(rnd.heights)
+length(rnd.heights)
+plot(ori.heights,rank(ori.heights)/length(ori.heights),
+col="red",xlab="height",ylab="F(height)",pch=19)
+points(rnd.heights,rank(rnd.heights)/length(rnd.heights),
+col="blue")
+
+```
+
+
+```{r Brute force randomization for Quakes data}
+
+ori.heights = hw.q$height
+rnd.heights = numeric()
+for ( i.sim in 1:100 ) {
+data.rnd <-apply(data.q,2,runif)
+hw.rnd=hclust(dist(data.rnd),method="ward.D2")
+rnd.heights <- c(rnd.heights,hw.rnd$height)
+}
+print(ori.heights)
+length(ori.heights)
+print(rnd.heights)
+length(rnd.heights)
+plot(ori.heights,rank(ori.heights)/length(ori.heights),
+col="red",xlab="height",ylab="F(height)",pch=19)
+points(rnd.heights,rank(rnd.heights)/length(rnd.heights),
+col="blue")
+
+```
