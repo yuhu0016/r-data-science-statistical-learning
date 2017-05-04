@@ -1,0 +1,139 @@
+---
+title: "Homework 4"
+output: html_document
+---
+
+```{r hw}
+uciRoot <- "http://archive.ics.uci.edu/ml/machine-learning-databases/"
+datURL <- "cpu-performance/machine.data"
+cpuDat <- read.table(paste0(uciRoot ,datURL),sep=",")
+
+
+# naming the attributes for each column 
+colnames(cpuDat) <- c("vendor","model","MYCT","MMIN","MMAX", "CACH", "CHMIN", "CHMAX", "PRP", "ERP") 
+#discarding vendor, model, and ERP
+Hw4Dat <-subset(cpuDat, select = c(3:9))
+#creating log-transformed data set (adding 1 to all values prior to log transform due to the 0's)
+LogHw4Dat <- log(Hw4Dat+1)
+
+##Sub-Problem 1: read in the dataset and provide numerical and graphical summaries 
+
+summary(LogHw4Dat)
+#the log-transformed data has less variance than the original cpuDat dataset. 
+
+#generating pairwise scatterplots of each pair of continuous predictors
+pairs(LogHw4Dat[1:6], pch =10, cex = 0.5, col=LogHw4Dat$PRP)
+#Based on my observations the MMAX, MMIN, and CACH all show good amount of clustering based on PRP values.
+#therefore at first glance these appear to be the better predictors with the strongest correlation. 
+
+for (i in 1:6){
+  print (abs(cor(LogHw4Dat[i],LogHw4Dat[7], method="pearson")))
+}
+#order by coefficient coorelation 
+OrderLogHw4Dat <- LogHw4Dat[order(-abs(cor(LogHw4Dat[1:7],LogHw4Dat[7], method="pearson")))]
+summary(OrderLogHw4Dat)
+
+##Sub-problem 2: add quadratic terms to the dataset
+simuLinQuadDat <- function() {
+  x2Tmp <- NULL
+  tmpCnms <- NULL
+  # for each linear term:
+  for ( iTmp in 2:dim(OrderLogHw4Dat)[2] ) {
+    # multiply it by itself and all other terms,
+    # excluding already generated pairwise combinations:
+    for ( jTmp in iTmp:dim(OrderLogHw4Dat)[2] ) {
+      x2Tmp <- cbind(x2Tmp,OrderLogHw4Dat[,iTmp]*OrderLogHw4Dat[,jTmp])
+      # maintain vector of column names for quadratic
+      tmpCnms <- c(tmpCnms,paste0(colnames(OrderLogHw4Dat)[iTmp]," X ",colnames(OrderLogHw4Dat)[jTmp]))
+    }
+  }
+  # name attributes in the matrix of quadratic terms:
+  colnames(x2Tmp) <- tmpCnms
+  data.frame(OrderLogHw4Dat,x2Tmp)
+}
+
+LogCpuDat <- simuLinQuadDat()
+class(LogCpuDat)
+#created a data frame with 28 columns, 1 outcome, 6 predictors, and 21 pairwise combinations 
+dim(LogCpuDat)
+head(LogCpuDat)
+pairs(LogCpuDat[2:7], pch =10, cex = 0.5, col=LogCpuDat$PRP)
+
+##Sub-problem 3: 
+#fit multiple regression models on the entire dataset
+lm(LogCpuDat[,1]~.,LogCpuDat[,c(2:28)])
+
+#calculate the training error for each of the models
+df2plot <- NULL
+for ( iTmp in 2:dim(LogCpuDat)[2] ) {
+  lmTmp <- lm(PRP~.,LogCpuDat[,1:iTmp])
+  errTmp <- sqrt(mean((LogCpuDat[,1]-predict(lmTmp))^2))
+  df2plot <- rbind(df2plot,data.frame(nvars=iTmp-1,err=errTmp))
+}
+summary(df2plot)
+
+#plot error as a function 
+
+plot(df2plot,xlab="Number of variables",ylab="Regression error",main=paste(dim(LogCpuDat)[1],"observations"))
+
+#The underlying data here is different than shown in the preface.  In the preface, the inclusion of the first three variables, 
+#the average of which plus some noise is the outcome shows the most drastic decrease in training error. In the regression error vs 
+# number of variable graph based on LogCpuDat (log transformed CPU data), there is a continuous drop in training error and the drop after the first
+# 3 variables continues to be fairly drastic until about the 5th variable. Also the shape of the preface graph is more of a curve,
+# whereas the shape of the LogCpuDat generated here is more "terraced."  This is because the preface data set is generated
+# by averaging 3 predictors with some noise, so the training error will decrease in a negatively curved slope. Whereas
+# CpuDat, being an actual data set is less likely to have training error graph with as predictable a shape. Lastly the regression error from 
+# the LogCpuDat likely has a smaller training error because the log transformation reduces the variance, which in turn reduces
+# the training error. 
+
+##sub-problem 4: develop a function performing bootstrap on the computer hardware dataset
+bootTrainTestErrOneAllVars <- function(LogCpuDat,nBoot=209) {
+  errTrain <- matrix(NA,nrow=nBoot,ncol=dim(LogCpuDat)[2]-1)
+  errTest <- matrix(NA,nrow=nBoot,ncol=dim(LogCpuDat)[2]-1)
+  allTrainErr <- numeric()
+  # first predictor is the second column in
+  # the input data - first is the outcome "Y":
+  for ( iTmp in 2:dim(LogCpuDat)[2] ) {
+    # fit model and calculate error on all observations:
+    lmTmp <- lm(PRP~.,LogCpuDat[,1:iTmp])
+    allTrainErr[iTmp-1] <- sqrt(mean((LogCpuDat[,"PRP"]-predict(lmTmp))^2))
+    # draw repeated boostraps of the data:
+    for ( iBoot in 1:nBoot ) {
+      # replace=TRUE is critical for bootstrap to work correctly:
+      tmpBootIdx <- sample(dim(LogCpuDat)[1],dim(LogCpuDat)[1],replace=TRUE)
+      # model fit on the bootstrap sample and
+      # corresponding training error:
+      lmTmpBoot <- lm(PRP~.,LogCpuDat[tmpBootIdx,1:iTmp])
+      errTrain[iBoot,iTmp-1] <- sqrt(mean((LogCpuDat[tmpBootIdx,"PRP"]-predict(lmTmpBoot))^2))
+      # test error is calculated on the observations
+      # =not= in the bootstrap sample - thus "-tmpBootIdx"
+      errTest[iBoot,iTmp-1] <- sqrt(mean((LogCpuDat[-tmpBootIdx,"PRP"]-predict(lmTmpBoot,newdata=LogCpuDat[-tmpBootIdx,1:iTmp]))^2))
+    } }
+  # return results as different slots in the list:
+  list(bootTrain=errTrain,bootTest=errTest,allTrain=allTrainErr)
+}
+
+##sub-problem 5: use bootstrap to estimate training and test error on the computer hardware dataset 
+# wrapper for plotting:
+plotBootRegrErrRes <- function(inpRes,inpPchClr=c(1,2,4),mainTxt=""){
+  matplot(1:length(inpRes$allTrain),cbind(inpRes$allTrain,colMeans(inpRes$bootTrain),colMeans(inpRes$bootTest)),pch=inpPchClr,col=inpPchClr,
+          lty=1,type="b",xlab="Number of Predictors",ylab="Regression error",main=mainTxt)
+  legend("topright",c("trainall","trainboot","testboot"),col=inpPchClr,text.col=inpPchClr,pch=inpPchClr,lty=1)
+}
+bootErrRes <- bootTrainTestErrOneAllVars(LogCpuDat,30)
+plotBootRegrErrRes(bootErrRes,mainTxt="209 observations")
+
+#Compare model error over the range of model complexity to that obtained by the dataset contributors (PRP and ERP). 
+#Remember about the log-transform we've performed prior to model fitting.
+LogERP <- log(cpuDat$ERP+1)
+lmTmp <- lm(LogCpuDat$PRP~LogERP)
+ERPTrainError <- sqrt(mean((LogCpuDat[,"PRP"]-predict(lmTmp))^2))
+print(ERPTrainError)
+```
+ERPTrainError is 0.39
+compared to the model error rates as predicted by 27 variables, the ERPTrainError is fairly low. The model error rate as predicted by 1-27 variables
+on the 27 predictor set ranges from 0.62 (for the trainall) for a simple, single variable predictor to roughly 0.35 for
+a complex, 27 predictor.  In coparison the training error for a model predicted by one single predictor, ERP is 0.39.  In comparing the training error rates
+(without bootstrap sampling) for both models, it looks like the training error for the 27 predictor model finally drops below 0.40
+with 7 variables, indicating that ERP is indeed highly correlated with the outcome variable PRP compared to the 27 other variables. Also the testboot error
+for the 27 models reaches a minimum at around 7 models but never dips below 0.40, suggesting that ERP is possibly a better predictor than the best 7 predictors combined.

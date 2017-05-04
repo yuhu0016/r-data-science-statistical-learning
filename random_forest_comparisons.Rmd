@@ -1,0 +1,1287 @@
+---
+title: "CSCI E-63C Week 10 assignment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(randomForest)
+library(MASS)
+library(class)
+library(ggplot2)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+In this assignment we will compare performance of random forest to that of LDA and KNN on a simulated dataset where we know exactly what is association between predictors and outcome.  The relationship between predictor levels and the outcome will involve interaction that is notoriously difficult to model by global methods such as LDA. The following example below illustrates the main ideas on a 3D dataset with two of the three attributes associated with the outcome:
+
+```{r}
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 1
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 1
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+# plot resulting attribute levels colored by outcome:
+pairs(xyzTmp,col=as.numeric(classTmp))
+```
+
+We can see that it is the interaction between the first two variables that has influences the outcome (we simulated it this way, of course!) and that points belonging to each of the two classes cannot be readily separated by a single line in 2D (or a single surface in 3D).
+
+```{r}
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+```
+
+Random forest seems to do reasonably well on such dataset.
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+```
+
+LDA, on the other hand, not so good! (not a surprise given what we've seen above).  What about a more flexible method such a KNN?  Let's check it out remembering that k -- number of neihbors -- in KNN is the parameter to modulate its flexibility (i.e. bias-variance tradeoff).
+
+```{r}
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate")
+```
+
+We can see from the above that there is a range of $k$ values where test error of KNN is the lowest and it is even lower that that of RF.  Now would be a good moment to think why one would want to choose RF over KNN or vice a versa for modeling the data if the figure above was representative of their true relative performance on a new dataset.
+
+For the purposes of the assignment you can use the code above (probably best to wrap reusable parts of it into function(s)) to generate data with varying numbers of predictors associated with outcome and not, different numbers of observations and differences in the average values of predictors' between two classes as required below. These differences between datasets and parameters of the call to random forest will illustrate some of the factors influencing relative performance of random forest, LDA and KNN classifiers.
+
+# Sub-problem 1 (15 points): effect of sample size
+
+Generate datasets with `nObs=50`, `200` and `1000` observations (approximately evenly split between training and test datasets), two variables associated with the outcome as parameterized above and three not associated, and average difference between two classes same as above (i.e. in the notation from the above code `nClassVars=2`, `nNoisevars=3` and `deltaClass=1`).  Obtain random forest, LDA and KNN test error rates.  Describe the differences between different methods and across the sample sizes used here.
+
+##First we examine the data for nObs = 50
+
+Given the small nObs the error rates are highest here compared to nObs = 200 or nObs =1000. LDA appearest to have the highest test error, RF is about 10% lower in test error allowing variantion due to sampling, with KNN 2.5% lower. Though these values can vary when not utilizing set.seed function, it's clear to see KNN seems to be most accurate, then random forest, and lastly, LDA. 
+
+```{r}
+set.seed(202)
+# How many observations:
+nObs <- 50
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 1
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+```{r}
+set.seed(1)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 31.7%  
+```
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 39%
+```
+
+```{r}
+# Fit KNN model at several levels of k:
+set.seed(1)
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:15)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+
+dfTmp
+min(dfTmp) #minimum error rate is 13% at k = 2
+
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 50")
+```
+
+##Here we examine the data for nObs = 200
+
+Here the gap in test error between the three methods widen slightly comapred to with a smaller nObs, again LDA had the highest test error at 43%, RF is at 34%, and KNN is lowest at 22%. Again it's clear to see KNN seems to be most accurate, then random forest, and lastly, LDA. 
+```{r}
+set.seed(203)
+# How many observations:
+nObs <- 200
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 1
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+```
+
+
+```{r}
+set.seed(2)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 34% 
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 43%
+
+```
+
+```{r}
+# Fit KNN model at several levels of k:
+set.seed(2)
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:20)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+
+dfTmp
+min(dfTmp) #minimum error rate is 23% at k = 3  
+
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs = 200")
+```
+
+
+##Here we examine the data for nObs = 1000
+
+With the larger nObs =1000, again LDA had the highest test error at 53% , RF is at 34%, and KNN is lowest at 29.8%. Again it's clear to see KNN seems to be most accurate, then random forest, and lastly, LDA. 
+
+Across the the three different sample sizes, LDA consistently had the highest test error, followed by RF and lastly KNN. As the sample sizes gerw, so did the test error rates for LDA. 
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 1
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+```{r}
+set.seed(3)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 34%  
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 53%
+
+```
+
+```{r}
+# Fit KNN model at several levels of k:
+set.seed(3)
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #min error is 29.79%
+
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 1000")
+
+```
+
+
+
+# Sub-problem 2 (15 points): effect of signal magnitude
+
+For sample sizes of `nObs=200` and `1000` observations (approximately evenly split into training and test datasets) simulate data as shown above with average differences between the two classes that are same as above, half of that and twice that (`deltaClass=0.5`, `1` and `2`).  Obtain and plot test error rates of random forest, LDA and KNN for each of the six (two samples sizes times three signal magnitudes) combinations of sample size and signal strengths.  Describe the most pronounced differences across error rates for those dataset.
+
+
+##Here we examine the data for nObs = 200, delta class = 0.5 
+
+
+```{r}
+set.seed(203)
+# How many observations:
+nObs <- 200
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 0.5
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+```{r}
+set.seed(4)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 40%
+```
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 48.5%
+
+```
+
+```{r}
+set.seed(4)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:25)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+
+dfTmp
+min(dfTmp) #min error rate is 39.4% 
+
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 200, dclass = 0.5")
+```
+
+
+##Here we examine the data for nObs = 200, delta class = 1 
+
+
+```{r}
+set.seed(203)
+# How many observations:
+nObs <- 200
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 1
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(5)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 39.2%
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 46.1%
+
+```
+
+```{r}
+set.seed(5)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:25)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+
+dfTmp
+min(dfTmp) #min error rate is 29.4% at k = 15
+
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 200, dclass = 1")
+```
+
+
+##Here we examine the data for nObs = 200, delta class = 2 
+
+
+```{r}
+set.seed(203)
+# How many observations:
+nObs <- 200
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(6)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 21.8%
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 42.6%
+
+```
+
+```{r}
+set.seed(6)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:25)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+
+dfTmp
+min(dfTmp) #min error rate is at 2.9% at k = 12
+
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 200, dclass = 2")
+```
+
+
+
+##Here we examine the data for nObs = 1000, delta class = 0.5
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 0.5
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(7)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 50.4%  
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 50% 
+
+```
+
+```{r}
+set.seed(7)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #minimum error rate is 44% at k =5 
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 1000, dclass = 0.5")
+
+```
+
+
+
+##Here we examine the data for nObs = 1000, delta class = 1
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 1
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(8)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 34.7%  
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 49.9% 
+
+```
+
+```{r}
+set.seed(8)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #minimum error rate is 30.9% at k = 66
+
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 1000, dclass 1")
+```
+
+##Here we examine the data for nObs = 1000, delta class = 2
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(9)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 6.3%  
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 49.3% 
+
+```
+
+```{r}
+set.seed(9)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #min error rate is at 5.1% at k = 22
+
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 1000, dClass =2")
+
+```
+
+# Sub-problem 3 (15 points): varying counts of predictors
+
+For all possible pairwise combinations of the numbers of variables asscoiated with outcome (`nClassVars=2` and `5`) and those not associated with the outcome (`nNoiseVars=1`, `3` and `10`) -- six pairwise combinations in total -- obtain and present graphically test errors from random forest, LDA and KNN.  Choose signal magnitude (`deltaClass`) so that it will yield non-trvial results -- noticeable variability in the error rates across those six pairwise combinations of attribute counts.  Describe the results.
+
+##Here we examine the data for nObs = 1000, delta class = 2,  nClass = 2, noise var = 1
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 1
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 5.4%  
+```
+
+
+```{r}
+set.seed(10)
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 50.6% 
+
+```
+
+```{r}
+set.seed(10)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) # minimum erro rrate is at 4.5% at k = 46
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nclass 2, noise 1")
+
+```
+
+
+##Here we examine the data for nObs = 1000, delta class = 2,  nClass = 2, noise var = 3
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(11)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 8.6%  
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 45% 
+
+```
+
+```{r}
+set.seed(11)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #minimum error rate is 5.2% 
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nclass 2, noise 3")
+
+```
+
+
+
+##Here we examine the data for nObs = 1000, delta class = 2,  nClass = 2, noise var = 10
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 10
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(12)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 21.7%
+```
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 51.6% 
+
+```
+
+```{r}
+set.seed(12)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #minimum error rate is 2.6% at k = 31
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nclass 2, noise 10")
+
+```
+
+
+
+##Here we examine the data for nObs = 1000, delta class = 2,  nClass = 5, noise var = 1
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 5
+# How many predictors are not:
+nNoiseVars <- 1
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(13)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 41.7%  
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 51% 
+
+```
+
+```{r}
+set.seed(13)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #actual min error is at 14.4%, at k = 12
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nclass 5, noise 1")
+
+```
+
+
+##Here we examine the data for nObs = 1000, delta class = 2,  nClass = 5, noise var = 3
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 5
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(14)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 51%
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 49%
+
+```
+
+```{r}
+set.seed(14)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #error rate is 23% at k = 6 
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nclass 5, noise 3")
+
+```
+
+
+
+##Here we examine the data for nObs = 1000, delta class =2 ,  nClass = 5, noise var = 10
+
+```{r}
+set.seed(201)
+# How many observations:
+nObs <- 1000
+# How many predictors are associated with outcome:
+nClassVars <- 2
+# How many predictors are not:
+nNoiseVars <- 3
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+
+```{r}
+set.seed(15)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain])
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 8.3%  
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 48.2% 
+
+```
+
+```{r}
+set.seed(15)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #min error rate is 5.5% at k = 7 
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nclass 5, noise 10")
+
+```
+
+# Sub-problem 4: (15 points): effect of `mtry`
+
+`mtry` parameter in the call to `randomForest` defines the number of predictors randomly chosen to be evaluated for their association with the outcome at each split.  By default for classification problem it is set as square root of the number of predictors in the dataset.  Here we will evaluate the impact of using different values of `mtry` on the error rate by random forest.
+
+For `nObs=5000`, `deltaClass=2`, `nClassVars=3` and `nNoiseVars=20` generate data using the above approach and run `randomForest` on it with `mtry=2`, `5` and `10`.  Describe the impact of using different values of `mtry` on the error rate by random forest -- compare it to that by LDA/KNN. 
+
+
+##Here we examine the data for nObs = 5000, delta class = 2,  nClass = 3, noise var = 20, mtry=2
+
+```{r}
+
+par=(mfrow = c( 1, 3 ) )
+set.seed(210)
+# How many observations:
+nObs <- 5000
+# How many predictors are associated with outcome:
+nClassVars <- 3
+# How many predictors are not:
+nNoiseVars <- 20
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+
+```{r}
+set.seed(16)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain], mtry=2)
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 46% 
+```
+
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 50.6%
+
+```
+
+```{r}
+set.seed(16)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #minimum error rate is 8.7% at k = 95
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 5000, nclass 3, Noise 20, mtry =2")
+
+```
+
+
+##Here we examine the data for nObs = 5000, delta class = 2,  nClass = 3, noise var = 20, mtry=5
+
+```{r}
+set.seed(210)
+# How many observations:
+nObs <- 5000
+# How many predictors are associated with outcome:
+nClassVars <- 3
+# How many predictors are not:
+nNoiseVars <- 20
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+```{r}
+set.seed(17)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain], mtry=5)
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 44% 
+```
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 49% 
+
+```
+
+```{r}
+set.seed(17)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #min error rate is at 8.4%, at k = 55
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 5000, nclass 3, Noise 20, mtry =5")
+```
+
+
+##Here we examine the data for nObs = 5000, delta class = 2,  nClass = 3, noise var = 20, mtry=10
+
+```{r}
+set.seed(210)
+# How many observations:
+nObs <- 5000
+# How many predictors are associated with outcome:
+nClassVars <- 3
+# How many predictors are not:
+nNoiseVars <- 20
+# To modulate average difference between two classes' predictor values:
+deltaClass <- 2
+# Simulate dataset with interaction between attribute levels associated with the outcome:
+xyzTmp <- matrix(rnorm(nObs*(nClassVars+nNoiseVars)),nrow=nObs,ncol=nClassVars+nNoiseVars)
+classTmp <- 1
+for ( iTmp in 1:nClassVars ) {
+  deltaTmp <- sample(deltaClass*c(-1,1),nObs,replace=TRUE)
+  xyzTmp[,iTmp] <- xyzTmp[,iTmp] + deltaTmp
+  classTmp <- classTmp * deltaTmp
+}
+classTmp <- factor(classTmp > 0)
+table(classTmp)
+
+```
+
+```{r}
+set.seed(18)
+# Split data into train and test
+bTrain <- sample(c(FALSE,TRUE),nrow(xyzTmp),replace=TRUE)
+# Fit random forest to train data, obtain test error:
+rfRes <- randomForest(xyzTmp[bTrain,],classTmp[bTrain], mtry=10)
+rfTmpTbl <- table(classTmp[!bTrain],predict(rfRes,newdata=xyzTmp[!bTrain,]))
+rfTmpTbl
+err.rf = 1-sum(diag(rfTmpTbl))/sum(rfTmpTbl)
+err.rf #error rate is 40.1%  
+```
+
+```{r}
+# Fit LDA model to train data and evaluate error on the test data:
+ldaRes <- lda(xyzTmp[bTrain,],classTmp[bTrain])
+ldaTmpTbl <- table(classTmp[!bTrain],predict(ldaRes,newdata=xyzTmp[!bTrain,])$class)
+ldaTmpTbl
+err.lda = 1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl)
+err.lda #test error here is 49.9% 
+
+```
+
+```{r}
+set.seed(18)
+# Fit KNN model at several levels of k:
+dfTmp <- NULL
+for ( kTmp in floor(1.2^(1:33)) ) {
+  knnRes <- knn(xyzTmp[bTrain,],xyzTmp[!bTrain,],classTmp[bTrain],k=kTmp)
+  tmpTbl <- table(classTmp[!bTrain],knnRes)
+  dfTmp <- rbind(dfTmp,data.frame(err=1-sum(diag(tmpTbl))/sum(tmpTbl),k=kTmp))
+}
+dfTmp
+min(dfTmp) #min error rate is 8.6%, at k = 95
+ggplot(dfTmp,aes(x=k,y=err))+geom_point()+scale_x_log10()+geom_hline(aes(yintercept = err,colour=type),data=data.frame(type=c("LDA","RF"),err=c(1-sum(diag(ldaTmpTbl))/sum(ldaTmpTbl),1-sum(diag(rfTmpTbl))/sum(rfTmpTbl))))+ggtitle("KNN error rate, nObs 5000, nclass 3, Noise 20, mtry =10")
+
+par( mfrow = c( 1, 1 ) )
+```
+

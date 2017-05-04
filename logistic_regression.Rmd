@@ -1,0 +1,336 @@
+---
+title: "CSCI E-63C Week 9 assignment"
+output: html_document
+---
+
+# Preface
+
+For this assignment we will use banknote authentication data (the one we worked with in week 2 assignment -- available at UCI ML data repository as http://archive.ics.uci.edu/ml/machine-learning-databases/00267/data_banknote_authentication.txt) to fit logistics regression model and evaluate performance of LDA, QDA and KNN classifiers.  As we have seen earlier this dataset should allow to predict which banknotes are authentic and which ones are forged fairly well, so we should expect to see low error rates for our classifiers.  Let's see whether some of those tools perform better than others on this data.
+
+```{r pulling in BankNotes data}
+uciRoot <- "http://archive.ics.uci.edu/ml/machine-learning-databases/"
+datURL <- "00267/data_banknote_authentication.txt"
+bankDat <- read.table(paste0(uciRoot ,datURL),sep=",")
+
+# naming the attributes for each column 
+colnames(bankDat) <- c("varianceOfWavelet","SkewnessOfWavelet","curtosisOfWavelet","entropyOfImage","class") 
+bankDat$class = as.factor(bankDat$class) 
+#here 0 is genuine and 1 is forged
+library(glmnet)
+library(ISLR)
+library(leaps)
+library(ggplot2)
+```
+
+
+# Problem 1 (10 points): logistic regression
+
+Fit logistic regression model of the class attribute using remaining four attributes as predictors in the modl.  Produce summary of the model, describe which attributes appear to be significantly associated with the categorical outcome in this model.  Use this model to make predictions on the entire dataset and compare these predictions and corresponding true values of the class attribute using confusion matrix (i.e. contingency table).  Calculate error rate (would this be training or test error in this case?), sensitivity and specificity (assuming that we are predicting class "1").  Describe the results.
+
+```{r Losgistic Regression hw9}
+
+x <- data.frame(bankDat[,c(1:4)])
+
+bankDat$class <- factor(bankDat$class)
+glm.fit = glm(class~., data = bankDat, family = binomial)
+summary(glm.fit)
+coef(glm.fit)
+summary (glm.fit) #from this summary we can see the variance of wavelet, skewness of wavelet, and curtosis of wavelet has significant p values while the entropy of image is close, at 0.06 but does not fall within the p<0.05 criteria.
+
+cor(bankDat[,-5]) #correlation shows there is significant correlation between the 4 x variables
+z <- predict(glm.fit,type = "response")
+summary(z)
+p =exp(z)/(1+exp(z))
+y1 = bankDat$class
+
+glm.pred <- ifelse (z> 0.5, 1, 0)
+table(glm.pred, y1)
+
+mean(glm.pred!=bankDat$class) #computes error rate.  This is reflective of training error hence the low value due to overfitting.
+
+#specificity = 1- (FP/N) or TN/N
+1-(5/(757+5))
+757/(757+5)
+
+#sensitivity = TP/P
+604/(6+604)
+```
+
+
+# Problem 2 (10 points): LDA and QDA
+
+Using LDA and QDA implementations available in the package `MASS`, calculate confusion matrix, (training) error rate, sensitivity and specificity for each of them.  Compare them to those of logistic regression.  Describe the results.
+```{r LDA }
+library(MASS)
+lda.fit=lda(class~., data = bankDat)
+summary(lda.fit)
+lda.fit 
+plot(lda.fit)
+
+lda.pred=predict(lda.fit, bankDat)
+summary(lda.pred)
+lda.class=lda.pred$class
+mean(lda.class!=y1) #training error rate 
+ 
+table(lda.class,y1)
+sum(lda.pred$posterior[,1]>=0.5)
+sum(lda.pred$posterior[,1]<0.5)
+#specificity = 1- (FP/N) 
+1-(32/(730+32))
+
+#sensitivity = TP/P
+610/610
+```
+
+
+```{r QDA }
+qda.fit=qda(class~., data = bankDat)
+qda.fit
+summary(qda.fit)
+qda.class = predict(qda.fit, bankDat)$class
+mean(qda.class!=y1)#training error rate
+table(qda.class, y1)
+mean(qda.class==y1)
+
+#specificity = 1- (FP/N) 
+1-(20/(742+20))
+
+#sensitivity = TP/P
+610/610
+```
+
+# Problem 3 (10 points): KNN
+
+Using `knn` from library `class`, calculate confusion matrix, error rate, sensitivity/specificity for  one and ten nearest neighbors models.  Compare them to corresponding results from LDA, QDA and logistic regression. Describe results of this comparison -- discuss whether it is surprising to see low *training* error for KNN classifier with $k=1$.
+```{r KNN}
+library(class)
+set.seed(3)
+
+train.X = bankDat[562:962,1:4]
+train.Y = bankDat[562:962,5]
+
+knn.pred=knn(train.X, x, train.Y,k=1)
+summary(knn.pred)
+
+table(knn.pred, y1)
+mean(knn.pred!=y1)
+#specificity = 1- (FP/N) 
+1-(6/(756+6))
+
+#sensitivity = TP/P
+610/610
+
+
+set.seed(3)
+
+train.X = bankDat[562:962,1:4]
+train.Y = bankDat[562:962,5]
+
+knn.pred=knn(train.X, x, train.Y,k=10)
+summary(knn.pred)
+
+table(knn.pred, y1)
+mean(knn.pred!=y1)
+
+#specificity = 1- (FP/N) 
+1-(18/(744+18))
+
+#sensitivity = TP/P
+610/610
+
+```
+
+# Problem 4 (30 points): compare test errors of logistic regression, LDA, QDA and KNN
+
+Using resampling approach of your choice (e.g. cross-validation, bootstrap, etc.) obtain test error as well as sensitivity and specificity for each of these methods (logistic regression, LDA, QDA, KNN with $k=1,2,5,10,20,50,100$).  Present results in the form of boxplots, compare test error/sensitivity/specificity across these methods and discuss their relative performance
+
+```{r logistic regression with sampling}
+
+bankDat$class <- factor(bankDat$class)
+alpha.fn=function(data,index){
+  return(ifelse(predict(glm(class~., data = bankDat, family = binomial, subset=index), type = "response")>0.5,1,0))
+}
+table(y1, alpha.fn(bankDat, sample(nrow(bankDat), replace=TRUE, 1372)))
+
+
+boot(bankDat, alpha.fn, R=1)
+plot(boot(bankDat, alpha.fn, R=1))
+boot(bankDat, alpha.fn, R=2)
+plot(boot(bankDat, alpha.fn, R=2))
+boot(bankDat, alpha.fn, R=5)
+plot(boot(bankDat, alpha.fn, R=5))
+boot(bankDat, alpha.fn, R=10)
+plot(boot(bankDat, alpha.fn, R=10))
+boot(bankDat, alpha.fn, R=20)
+plot(boot(bankDat, alpha.fn, R=20))
+boot(bankDat, alpha.fn, R=50)
+plot(boot(bankDat, alpha.fn, R=50))
+boot(bankDat, alpha.fn, R=100)
+plot(boot(bankDat, alpha.fn, R=100))
+
+table(alpha.fn(bankDat, sample(nrow(bankDat), replace=TRUE, 1372)), y1)
+mean(alpha.fn(bankDat, sample(nrow(bankDat), replace=TRUE, 1372))!=y1)
+#specificity = 1- (FP/N) 
+1-(421/(421+341))
+
+#sensitivity = TP/P
+354/(354+256)
+
+
+index = sample(nrow(bankDat), replace=TRUE, 1000)
+boot.fn=function(data,index)
+  return(coef(glm(class~., data = bankDat, family = binomial, subset = index)))
+boot(bankDat,boot.fn, R=100)
+
+
+z.boot <- predict(glm.fit,type = "response")
+p =exp(z)/(1+exp(z))
+y1 = bankDat$class
+
+glm.pred <- ifelse (z> 0.5, 1, 0)
+table(glm.pred, y1)
+
+boot.fn=function(data,index)
+  return(coef(glm(class~., data = bankDat, family = binomial, subset=index)))
+boot.fn(bankDat, sample(nrow(bankDat), replace=TRUE,1000))
+boot(bankDat,boot.fn, R=100)
+
+boot.fn=function(data,index)
+  return(coef(glm(class~., data = bankDat, family = binomial, subset=index)))
+boot.fn(bankDat, sample(nrow(bankDat), replace=TRUE,1000))
+boot(bankDat,boot.fn, R=100)
+
+boot.fn = function(data,index)
+  coefficients(glm(class~., data = bankDat, family = binomial, subset = index))
+set.seed(1)
+boot.fn(bankDat, sample(nrow(bankDat), replace=TRUE))
+
+boot(bankDat, boot.fn, R=1)
+boot(bankDat, boot.fn, R=2)
+plot(boot(bankDat, boot.fn, R=2))
+boot(bankDat, boot.fn, R=5)
+plot(boot(bankDat, boot.fn, R=5))
+boot(bankDat, boot.fn, R=10)
+plot(boot(bankDat, boot.fn, R=10))
+boot(bankDat, boot.fn, R=20)
+plot(boot(bankDat, boot.fn, R=20))
+boot(bankDat, boot.fn, R=50)
+plot(boot(bankDat, boot.fn, R=50))
+boot(bankDat, boot.fn, R=100)
+plot(boot(bankDat, boot.fn, R=100))
+
+```
+
+```{r LDA with sampling}
+
+
+bankDat.shuffled<-bankDat[sample(nrow(bankDat)),]
+
+
+folds <- cut(seq(1,nrow(bankDat.shuffled)),breaks=2,labels=FALSE)
+
+
+for(i in 1:2){
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds==i,arr.ind=TRUE)
+    testData <- bankDat.shuffled[testIndexes, ]
+    trainData <- bankDat.shuffled[-testIndexes, ]
+    #Use the test and train data partitions however you desire...
+    test.lda.pred <- as.data.frame(predict(lda(class~., data = testData)))
+    train.lda.pred <- as.data.frame(predict(lda(class~., data = trainData)))
+}
+
+summary(test.lda.pred)
+summary(train.lda.pred)
+
+test.class <- test.lda.pred$class
+train.class <- train.lda.pred$class
+table(test.class, train.class)
+
+mean(test.lda.pred$class!=train.lda.pred$class) #approximately half of the numbers are unequal, suggesting that a significant training error when k=2. 
+
+#specificity = 1- (FP/N) 
+1-(161/(189+161))
+
+#sensitivity = TP/P
+145/(191+145)
+```
+
+
+```{r QDA with sampling}
+
+
+#Randomly shuffle the data
+bankDat.shuffled<-bankDat[sample(nrow(bankDat)),]
+
+#Create 10 equally size folds
+folds <- cut(seq(1,nrow(bankDat.shuffled)),breaks=2,labels=FALSE)
+
+#Perform 10 fold cross validation
+for(i in 1:2){
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds==i,arr.ind=TRUE)
+    testData <- bankDat.shuffled[testIndexes, ]
+    trainData <- bankDat.shuffled[-testIndexes, ]
+    #Use the test and train data partitions however you desire...
+    test.qda.pred <- as.data.frame(predict(qda(class~., data = testData)),k=2)
+    train.qda.pred <- as.data.frame(predict(qda(class~., data = trainData)),k=2)
+}
+
+summary(test.qda.pred)
+summary(train.qda.pred)
+table(test.qda.pred$class, train.qda.pred$class)
+
+
+mean(test.qda.pred$class!=train.qda.pred$class) #approximately half of the numbers are unequal, suggesting that a significant training error when k=2. 
+
+
+test.qda.class <- test.qda.pred$class
+train.qda.class <- train.qda.pred$class
+table(test.qda.class, train.qda.class)
+
+mean(test.lda.pred$class!=train.lda.pred$class) #approximately half of the numbers are unequal, suggesting that a significant training error when k=2. 
+
+#specificity = 1- (FP/N) 
+1-(158/(158+209))
+
+#sensitivity = TP/P
+145/(154+165)
+```
+
+
+```{r KNN with sampling}
+
+#Randomly shuffle the data
+bankDat.shuffled<-bankDat[sample(nrow(bankDat)),]
+factor(bankDat$class)
+#Create 10 equally size folds
+folds <- cut(seq(1,nrow(bankDat.shuffled)),breaks=2,labels=FALSE)
+
+#Perform 10 fold cross validation
+for(i in 1:2){
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds==i,arr.ind=TRUE)
+    testData <- bankDat.shuffled[testIndexes, ]
+    trainData <- bankDat.shuffled[-testIndexes, ]
+    #Use the test and train data partitions however you desire...
+    train.knn.X <- trainData[,1:4]
+    train.knn.Y <- trainData[,5]
+    test.knn.X<- testData [,1:4]
+    test.knn.Y <- trainData [,5]
+    knn.train.pred <- knn(train.knn.X, x, train.knn.Y, k=100)
+    knn.test.pred <- knn(test.knn.X, x, test.knn.Y, k=100)
+    summary(knn.pred)
+}
+table(knn.train.pred, knn.test.pred)
+mean(knn.train.pred!=knn.test.pred)
+
+#specificity = 1- (FP/N) 
+1-(469/(469+732))
+
+#sensitivity = TP/P
+149/(149+22)
+
+
+```
+
